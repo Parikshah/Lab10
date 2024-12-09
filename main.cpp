@@ -246,224 +246,133 @@ void Probe_String_HT::expand_and_rehash() {
 // make string all lower-case, remove leading/trailing punctuation, etc.
 // also remove possessive trailing "'s"
 
-void cleanup_string(string & s)
-{
-  int i;
-
-  while (s.size() > 0 && ispunct(s[0]))
-    s.erase(0, 1);
-
-  while (s.size() > 0 && ispunct(s[s.size() - 1]))
-    s.erase(s.size() - 1, 1);
-
-  for (i = 0; i < s.size(); i++)
-    if (isalpha(s[i]))
-      s[i] = tolower(s[i]);
-
-  // possessive checker
-  
-  if (s[s.length() - 2] == '\'' && s[s.length() - 1] == 's') 
-    s = s.substr(0, s.length() - 2);
+void cleanup_string(string &word) {
+    for (auto &ch : word)
+        ch = tolower(ch);
+    word.erase(remove_if(word.begin(), word.end(), [](char c) { return !isalpha(c); }), word.end());
 }
 
-//----------------------------------------------------------------------------
-//----------------------------------------------------------------------------
+void clean_and_insert_all_words(String_HT &hash_table, const string &filename) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Error: Could not open file " << filename << endl;
+        return;
+    }
 
-// count words in file
-
-int get_word_count(string filename)
-{
-  // try to open file 
-  
-  ifstream inStream;
-  string s;
-  
-  inStream.open(filename.c_str());
-
-  if (inStream.fail()) {
-    cout << "Failed to open file\n";
-    exit(1);
-  }
-
-  // count words
-
-  int word_count = 0;
-  
-  while (!inStream.eof()) {
-    
-    inStream >> s;
-
-    if (!inStream.eof() && s.size())
-      word_count++;
-  }
-
-  inStream.close();
-
-  return word_count;
+    string word;
+    while (file >> word) {
+        cleanup_string(word);
+        if (!word.empty()) {
+            hash_table.insert(word);
+        }
+    }
+    file.close();
 }
 
-//----------------------------------------------------------------------------
-
-// "clean" words in filename before inserting into hash table
-
-void clean_and_insert_all_words(string filename, String_HT *HT)
-{
-  // try to open file 
-
-  ifstream inStream;
-  string s;
-
-  inStream.open(filename.c_str());
-
-  if (inStream.fail()) {
-    cout << "Failed to open file\n";
-    exit(1);
-  }
-  
-  while (!inStream.eof()) {
-
-    inStream >> s;
-
-    if (!inStream.eof()) {
-
-      cleanup_string(s); 
-
-      if (s.size())
-	HT->insert(s);
+void process_spellcheck(String_HT &hash_table, const string &filename) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Error: Could not open file " << filename << endl;
+        return;
     }
-  }
 
-  inStream.close();
+    string word;
+    map<string, int> badwords;
+
+    while (file >> word) {
+        cleanup_string(word);
+        if (!word.empty()) {
+            int num_collisions = 0;
+            if (!hash_table.find(word, num_collisions)) {
+                badwords[word] = num_collisions;
+            }
+        }
+    }
+
+    file.close();
+
+    cout << badwords.size() << endl;
+    for (const auto &entry : badwords) {
+        cout << entry.first << " " << entry.second << endl;
+    }
 }
 
-//----------------------------------------------------------------------------
-
-// "clean" each word in filename before seeing if it is in hash table.
-// if not, put cleaned word into badwords map along with num_collisions
-
-void spellcheck_all_cleaned_words(string filename, String_HT *HT, map<string, int> & badwords)
-{
-  // try to open file 
-
-  ifstream inStream;
-  string s;
-  int num_collisions;
-  
-  inStream.open(filename.c_str());
-
-  if (inStream.fail()) {
-    cout << "Failed to open file\n";
-    exit(1);
-  }
-  
-  while (!inStream.eof()) {
-
-    inStream >> s;
-
-    if (!inStream.eof()) {
-
-      cleanup_string(s); 
-      
-      if (s.size() && !HT->find(s, num_collisions))  
-	badwords.insert(make_pair(s, num_collisions));
-    }
-  }
-
-  inStream.close();
-}
-
-//----------------------------------------------------------------------------
-//----------------------------------------------------------------------------
-
-int main(int argc, char **argv)
-{
-  if (argc < 2) {
-    cout << "hashcheck <command filename>\n";
-    exit(1);
-  }
-
-  // open command file
-
-  ifstream commandStream;
-
-  commandStream.open(argv[1]);
-
-  if (commandStream.fail()) {
-    cout << "Failed to open command file\n";
-    exit(1);
-  }
-
-  // iterate through file line by line assuming no syntax errors
-  
-  string line, s_command, s_arg;
-  int word_count, num_collisions;
-  String_HT *HT;
-  
-  while (getline(commandStream, line)) {
-
-    stringstream ls(line);
-
-    ls >> s_command;
-    ls >> s_arg;
-
-    // create hash table "dictionary" using separate chaining for collision resolution
-    
-    if (s_command == "CHAIN") {
-      word_count = get_word_count(s_arg);
-      HT = new Chain_String_HT(2 * word_count);
-      clean_and_insert_all_words(s_arg, HT);
-      cout << word_count << " " << HT->table_size << endl;
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        cerr << "Usage: " << argv[0] << " <command filename>" << endl;
+        return 1;
     }
 
-    // create hash table "dictionary" using quadratic probing for collision resolution
-
-    else if (s_command == "PROBE") {
-      word_count = get_word_count(s_arg);
-      HT = new Probe_String_HT(2 * word_count);
-      clean_and_insert_all_words(s_arg, HT);
-      cout << word_count << " " << HT->table_size << endl;
+    ifstream command_file(argv[1]);
+    if (!command_file.is_open()) {
+        cerr << "Error: Could not open file " << argv[1] << endl;
+        return 1;
     }
 
-    // insert word into dictionary
-    
-    else if (s_command == "INSERT") {
-      HT->insert(s_arg);
-      cout << HT->num_entries << " " << HT->table_size << endl;
+    string line;
+    String_HT *hash_table = nullptr;
+
+    while (getline(command_file, line)) {
+        istringstream iss(line);
+        string command, arg1, arg2;
+        iss >> command >> arg1;
+
+        if (command == "CHAIN" || command == "PROBE") {
+            if (hash_table) {
+                delete hash_table;
+                hash_table = nullptr;
+            }
+
+            ifstream dict_file(arg1);
+            if (!dict_file.is_open()) {
+                cerr << "Error: Could not open dictionary file " << arg1 << endl;
+                return 1;
+            }
+
+            int word_count = 0;
+            string word;
+            while (dict_file >> word) {
+                cleanup_string(word);
+                if (!word.empty()) {
+                    word_count++;
+                }
+            }
+            dict_file.close();
+
+            if (command == "CHAIN") {
+                hash_table = new Chain_String_HT(word_count);
+            } else if (command == "PROBE") {
+                hash_table = new Probe_String_HT(word_count);
+            }
+
+            clean_and_insert_all_words(*hash_table, arg1);
+            cout << hash_table->num_entries << " " << hash_table->table_size << endl;
+        } else if (command == "INSERT") {
+            if (hash_table) {
+                hash_table->insert(arg1);
+                cout << hash_table->num_entries << " " << hash_table->table_size << endl;
+            }
+        } else if (command == "REMOVE") {
+            if (hash_table) {
+                hash_table->remove(arg1);
+                cout << hash_table->num_entries << " " << hash_table->table_size << endl;
+            }
+        } else if (command == "FIND") {
+            if (hash_table) {
+                int num_collisions = 0;
+                if (!hash_table->find(arg1, num_collisions)) {
+                    cout << arg1 << " " << num_collisions << endl;
+                }
+            }
+        } else if (command == "SPELLCHECK") {
+            if (hash_table) {
+                process_spellcheck(*hash_table, arg1);
+            }
+        }
     }
 
-    // remove word from dictionary
+    delete hash_table;
+    command_file.close();
 
-    else if (s_command == "REMOVE") {
-      HT->remove(s_arg);
-      cout << HT->num_entries << " " << HT->table_size << endl;
-    }
-
-    // check if word is NOT in dictionary
-
-    else if (s_command == "FIND") {
-      if (!HT->find(s_arg, num_collisions))
-	cout << s_arg << " " << num_collisions << endl;
-    }
-
-    // see which words in file are NOT in dictionary
-
-    else if (s_command == "SPELLCHECK") {
-      map<string,int> badwords;
-      spellcheck_all_cleaned_words(s_arg, HT, badwords);
-      cout << badwords.size() << endl;
-      for (auto itr : badwords) 
-	cout << itr.first << " " << itr.second << endl;
-    }
-
-    // garbage
-    
-    else {
-      cout << "Unknown command " << s_command << endl;
-      exit(1);
-    }
-  }
-  
-  commandStream.close();
-
-  return 1;
+    return 0;
 }
